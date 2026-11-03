@@ -1,0 +1,43 @@
+name: Whoami (temp)
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  whoami:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests
+      - name: Which account per cookie
+        env:
+          GLADOS_COOKIE: ${{ secrets.GLADOS_COOKIE }}
+        run: |
+          python - <<'PY'
+          import hashlib, os, requests
+          UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+          raw = os.environ.get('GLADOS_COOKIE', '')
+          sep = '\n' if '\n' in raw else '&'
+          def mask(e):
+              if '@' not in e: return e[:2] + '***'
+              n, d = e.split('@', 1)
+              return n[:2] + '*' * max(len(n) - 2, 1) + '@' + d
+          for i, c in enumerate([x.strip() for x in raw.split(sep) if x.strip()], 1):
+              try:
+                  r = requests.get('https://glados.cloud/api/user/status',
+                                   headers={'cookie': c, 'user-agent': UA}, timeout=25)
+                  b = r.json()
+              except Exception as ex:
+                  print(f'账号 {i}: ERROR {ex}'); continue
+              d = b.get('data') or {}
+              email = str(d.get('email', '?'))
+              sess = [p.split('=', 1)[1] for p in c.split(';') if p.strip().startswith('gld:sess=')]
+              print(f"账号 {i} | email={mask(email)} | email_hash={hashlib.sha256(email.encode()).hexdigest()[:10]} "
+                    f"| leftDays={str(d.get('leftDays','?')).split('.')[0]} | gld:sess={(sess[0][:19] if sess else 'none')}… "
+                    f"| http={r.status_code} code={b.get('code')}")
+          PY
